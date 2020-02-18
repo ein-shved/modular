@@ -33,12 +33,17 @@ def increase_printer(out):
             nonlocal out
             if in_str == None:
                 return out
+            if not in_str:
+                return out(in_str)
             return out('    ' + in_str)
         return p
     elif isinstance(out, str):
         def p(in_str = None):
             nonlocal out
             if in_str == None:
+                return out
+            if not in_str:
+                out += '\n'
                 return out
             out = out + '    ' + in_str + '\n'
             return out
@@ -241,6 +246,7 @@ class Method(Struct):
             else:
                 line += ", "
             line += "uint8_t {n}".format(n=arg)
+        line += ", uint16_t vac, uint8_t vav[]"
         line += ");"
         pr(line)
 
@@ -272,6 +278,8 @@ class Method(Struct):
         argument_formart=kwargs['argument']
         default_format = None
         pr = None
+        va = 'NULL'
+        valen = '0'
         line = '{n}('.format(n=self._receive)
         if 'default' in kwargs:
             default_format = kwargs['default']
@@ -279,10 +287,21 @@ class Method(Struct):
             pr = kwargs['pr']
             ipr = increase_printer(pr)
             pr(line)
+        if 'va' in kwargs and 'valen' in kwargs:
+            va = kwargs['va']
+            valen = kwargs['valen']
+        elif 'va_fmt' in kwargs and 'valen_fmt' in kwargs:
+            va = "{test} ? {arg} : NULL".format(
+                test = predicate_format.format(i = len(self._arguments)),
+                arg = kwargs['va_fmt'].format(i = len(self._arguments)))
+            valen = "{test} ? {arg} : 0".format(
+                test = predicate_format.format(i = len(self._arguments)),
+                arg = kwargs['valen_fmt'].format(i = len(self._arguments)))
         if 'tail' in kwargs:
             tail = ")" + kwargs['tail']
         else:
             tail = ")"
+
         for i in range(0, len(self._arguments)):
             test=predicate_format.format(i=i)
             argument=argument_formart.format(i=i)
@@ -292,14 +311,16 @@ class Method(Struct):
                 default=self._arguments[i].default()
             arg="({test}) ? ({argument}) : ({default})".format(
                  test=test, argument=argument, default=default)
-            if i < len(self._arguments) - 1:
-                arg += ','
-            else:
-                arg += tail
+            arg += ','
             if pr:
                 ipr(arg)
             else:
                 line += arg
+        if pr:
+            ipr(valen + ",")
+            ipr(va + tail)
+        else:
+            line += valen + ", " + va + tail
         if pr:
             return pr()
         else:
@@ -309,11 +330,13 @@ class Method(Struct):
         pr(self.get_call(*args) + ';')
 
 class Module (Struct):
-    def __init__ (self, name, obj):
+    def __init__ (self, name, obj, filename):
         self._name = name.lower()
         self._events = []
         self._methods = []
         self._sender = name + '_send_data'
+        self._event_table_get = name + '_event_table_get'
+        self._filename = filename
         events_inline = False
 
         if 'events_inline' in obj:
@@ -327,6 +350,8 @@ class Module (Struct):
                 self._methods.append(Method(self, n, len(self._methods) + 1, m))
         if 'sender' in obj:
             self._sender = obj['sender']
+        if 'event_table_get' in obj:
+            self._event_table_get = obj['event_table_get']
         Struct.__init__(self, "module_{n}_dsc".format(n=self.name()),
                                                       True, True)
 
@@ -341,6 +366,16 @@ class Module (Struct):
     def put_h(self):
         out = ""
         pr = printer(out)
+        pr('''/*
+* Automatically generated from {fname}.
+* DO NOT EDIT THIS
+*
+* For more information see https://github.com/ein-shved/modular or
+* contact Yury Shvedov <mestofel13@gmail.com>
+*
+*/'''.format(fname=self._filename))
+
+        pr('')
         pr('#ifndef {}_H'.format(self.uppername()))
         pr('#define {}_H'.format(self.uppername()))
         pr('#include "modular.h"')
@@ -414,6 +449,15 @@ class Module (Struct):
     def put_c(self):
         out = ""
         pr = printer(out)
+        pr('''/*
+* Automatically generated from {fname}.
+* DO NOT EDIT THIS
+*
+* For more information see https://github.com/ein-shved/modular or
+* contact Yury Shvedov <mestofel13@gmail.com>
+*
+*/'''.format(fname=self._filename))
+        pr('')
         pr("#include \"{}\"\n".format(self.h_name()))
         pr("")
         self.put_events_senders_definitions(pr, False)
@@ -484,14 +528,14 @@ class Module (Struct):
 
     def put_receiver(self, pr):
         self.put_method_receiver_predefenition(pr)
-        self.put_event_receiver_predefenition(pr)
+        self.put_event_processor_predefenition(pr)
         pr('')
         pr(self.get_receiver_prototype())
         pr('{')
         self.put_receiver_body(increase_printer(pr))
         pr('}')
         self.put_method_receiver(pr)
-        self.put_event_receiver(pr)
+        self.put_event_processor(pr)
 
     def put_receiver_body(self, pr):
         ipr = increase_printer(pr)
@@ -503,34 +547,27 @@ class Module (Struct):
         pr('case MSG_METHOD:')
         ipr('return handle_method(msg);')
         pr('default:')
-        ipr('return EUNSUPPORTED;')
+        ipr('return -EUNSUPPORTED;')
         pr('}')
-
-    def get_event_receiver_prototype(self):
-        return 'static int handle_event(message_t *msg)'
 
     def get_method_receiver_prototype(self):
         return 'static int handle_method(message_t *msg)'
 
-    def put_event_receiver_predefenition(self, pr):
-        return pr(self.get_event_receiver_prototype() + ';')
+    def get_event_processor_prototype(self):
+        return 'int process_event(event_handler_t *handler, event_t *event)'
 
     def put_method_receiver_predefenition(self, pr):
         return pr(self.get_method_receiver_prototype() + ';')
 
-    def put_event_receiver(self, pr):
-        pr(self.get_event_receiver_prototype())
-        pr('{')
-        self.put_event_receiver_body(pr)
-        pr('}')
+    def put_event_processor_predefenition(self, pr):
+        return pr(self.get_event_processor_prototype() + ';')
 
     def put_method_receiver(self, pr):
         pr(self.get_method_receiver_prototype())
         pr('{')
         self.put_method_receiver_body(increase_printer(pr))
         pr('}')
-    def put_event_receiver_body(self, pr):
-        pass
+
     def put_method_receiver_body(self, pr):
         ipr = increase_printer(pr)
         pr('method_t *method = (method_t *)msg;')
@@ -539,14 +576,45 @@ class Module (Struct):
         for m in self._methods:
             pr('case {n}:'.format(n=m._num))
             ipr('return')
-            m.call_format(predicate="{i} < (msg->size - 6)",
+            m.call_format(predicate="{i} < MT_NUM_ARGS(method)",
                           argument="method->args[{i}]",
                           pr=increase_printer(ipr),
-                          tail=';')
+                          tail=';', va_fmt="&method->args[{i}]",
+                          valen_fmt="MT_NUM_ARGS(method) - {i}")
         pr('default:')
-        ipr('return EINVALIDMETHOD;')
+        ipr('return -EINVALIDMETHOD;')
 
+    def put_event_processor(self, pr):
+        pr(self.get_event_processor_prototype())
+        pr('{')
+        self.put_event_processor_body(increase_printer(pr))
+        pr('}')
 
+    def put_event_processor_body(self, pr):
+        ipr = increase_printer(pr)
+        pr("message_t msg = &event->msg;")
+        pr("uint8_t *eargs = event->args;")
+        pr("uint8_t *hargs = handler->args;")
+        pr("uint8_t *vav = handler->ev_max_arg >= EV_NUM_ARGS(event) ? NULL :")
+        ipr(    "&eargs[handler->ev_max_arg];")
+        pr("uint16_t vac = handler->ev_max_arg >= EV_NUM_ARGS(event) ? 0 : ")
+        ipr(    "EV_NUM_ARGS(event) - handler->ev_max_arg;")
+        pr('')
+        pr('switch(handler->called_method) {')
+        predicate="{i} < handler->num_args && hargs[{i}] > 0 && hargs[{i}] < EV_NUM_ARGS(event)"
+        argument="eargs[hargs[{i}] - 1]" # Count in handlers begins with 1
+        for m in self._methods:
+            pr('case {n}:'.format(n=m._num))
+            ipr('return')
+            m.call_format(predicate=predicate,
+                          argument=argument,
+                          pr=increase_printer(ipr),
+                          tail=';',
+                          valen="vac", va="vav" )
+        pr('default:')
+        ipr('return EOK;')
+
+filename = sys.argv[1]
 y = open(sys.argv[1], "r").read()
 modules = yaml.load(y, Loader)
 
@@ -557,7 +625,7 @@ if 'modules' not in modules:
     raise InvalidModulesSyntaxException()
 
 for n, m in modules['modules'].items():
-    module = Module(n, m)
+    module = Module(n, m, filename)
     print ("Generating " + module.h_name())
     h = module.put_h()
     hf = open(module.h_name(), "w")
