@@ -1,0 +1,4 @@
+*.pyc
+tags
+.Session.vim
+cscope.out
