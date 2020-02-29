@@ -3,6 +3,11 @@
 #ifndef MODULAR_H
 #define MODULAR_H
 
+#include <stddef.h>
+#include <stdint.h>
+
+#define STRUCT_PACKED __attribute__ ((__packed__))
+
 typedef char name_t [3];
 typedef name_t arg_name_t;
 
@@ -51,11 +56,11 @@ typedef struct {
     /* First - is positional number of income event's argument.
      * Second - is positional number of called method's argument.
      * All positional number counts from 1. 0 - is extra values */
-    uint8_t args[2][];
+    uint8_t args[][2];
 } STRUCT_PACKED event_handler_dsc_t;
 
 enum {
-    MSG_NONE        = 0
+    MSG_NONE        = 0,
     MSG_MODULE_DSC  = 1,
     MSG_EVENT       = 2,
     MSG_METHOD      = 3,
@@ -75,7 +80,8 @@ typedef struct {
     /* Followed by msg.size - 6 arguments */
     uint8_t args[];
 } STRUCT_PACKED event_t;
-#define EV_NUM_ARGS(ev) ((ev)->msg.size - (uint16_t)((ev)->args - ev))
+#define EV_NUM_ARGS(ev) ((ev)->msg.size - (uint16_t)                          \
+                    ((uint8_t *)(ev)->args - (uint8_t *)ev))
 
 typedef struct {
     message_t msg;  /* id of receiver module */
@@ -84,7 +90,8 @@ typedef struct {
     uint8_t args[];
 } STRUCT_PACKED method_t;
 
-#define MT_NUM_ARGS(mt) ((mt)->msg.size - (uint16_t)((mt)->args - mt))
+#define MT_NUM_ARGS(mt) ((mt)->msg.size - (uint16_t)                          \
+                    ((uint8_t *)(mt)->args - (uint8_t *)mt))
 
 #define MODULE_T(module_dsc_typename) struct {                                \
     message_t msg; /* id of sender module */                                  \

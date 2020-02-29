@@ -65,18 +65,18 @@ class Event (Struct):
         ipr = increase_printer(pr)
         iipr = increase_printer(ipr)
         n = self.uppername()
-        pr("event_t event = {")
-        ipr(".msg = {")
-        self._module.put_message(iipr, 'MSG_EVENT', 'id',
-                                 len(self._arguments) + 1)
-        ipr("},")
-        ipr(".event_id = {id},".format(id=self._num))
-        ipr(".args = {")
+        pr("uint8_t buf[sizeof(event_t) + {n}];".format(n=len(self._arguments)))
+        pr("event_t *event = (event_t *)buf;")
+        pr("")
+        self._module.put_message(pr, 'MSG_EVENT', 'id',
+                                 len(self._arguments) + 1,
+                                 prefix='event->msg.', suffix=";")
+        pr("event->event_id = {id};".format(id=self._num))
+        i=0
         for arg in self._arguments:
-            iipr ("{n},".format(n = arg.lower()))
-        ipr("},");
-        pr("};")
-        pr("return {s};".format(s=self._module.send('&event.msg')))
+            pr ("event->args[{i}] = {n};".format(i=i, n = arg.lower()))
+            i=i+1;
+        pr("return {s};".format(s=self._module.send('&event->msg')))
 
     def put_vals_in_module(self, pr):
         pr('.event_{n} = {{'.format(n=self.name()))

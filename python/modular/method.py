@@ -41,7 +41,7 @@ class Method(Struct):
         line = None
         for arg in self._arguments:
             if line == None:
-                line = "void {n} (".format(n=self._receive)
+                line = "int {n} (".format(n=self._receive)
             else:
                 line += ", "
             line += "uint8_t {n}".format(n=arg)

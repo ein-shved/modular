@@ -25,6 +25,8 @@ class Module (Struct):
                 self._methods.append(Method(self, n, len(self._methods) + 1, m))
         if 'sender' in obj:
             self._sender = obj['sender']
+        if 'event_processor' in obj:
+            self._event_processor = obj['event_processor']
         if 'event_table_get' in obj:
             self._event_table_get = obj['event_table_get']
         Struct.__init__(self, "module_{n}_dsc".format(n=self.name()),
@@ -53,25 +55,22 @@ class Module (Struct):
         pr('')
         pr('#ifndef {}_H'.format(self.uppername()))
         pr('#define {}_H'.format(self.uppername()))
-        pr('#include "modular.h"')
-        pr('')
-        self.put_methods_predefinitions(pr)
+        pr('#include <modular.h>')
+        pr("")
+        self.put_methods_definitions(pr)
         pr("");
-        self.put_events_predefinitions(pr)
+        self.put_events_definitions(pr)
         pr("");
         self.put_definition(pr)
         pr("")
         self.put_sender_prototype(pr)
         self.put_describer_prototype(pr)
         self.put_receiver_predefenition(pr)
+        self.put_event_processor_predefenition(pr)
         pr("");
         self.put_methods_receivers(pr)
         pr("");
         self.put_events_senders(pr)
-        pr("");
-        self.put_methods_definitions(pr)
-        pr("");
-        self.put_events_definitions(pr)
         pr("");
         self.put_events_senders_definitions(pr)
         pr("");
@@ -142,14 +141,18 @@ class Module (Struct):
         self.put_receiver(pr)
         return pr()
 
-    def put_message(self, pr, msg, module_id, data_size):
+    def put_message(self, pr, msg=None, module_id=None, data_size=None,
+                    prefix=".", suffix=","):
         if isinstance(data_size, str):
             size = '(' + data_size + ' + 1)'
-        else:
+        elif data_size != None:
             size = data_size + 1
-        pr (".msg = {t},".format(t=msg))
-        pr (".id = {i},".format(i=module_id))
-        pr (".size = hton16({s}),".format(s=size))
+        if msg:
+            pr ("{p}msg = {t}{s}".format(p=prefix, t=msg, s=suffix))
+        if module_id:
+            pr ("{p}id = {i}{s}".format(i=module_id, p=prefix, s=suffix))
+        if data_size:
+            pr ("{p}size = hton16({s}){f}".format(s=size, p=prefix, f=suffix))
 
     def send(self, data):
         return '{s}({d})'.format(s=self._sender, d=data)
@@ -171,13 +174,14 @@ class Module (Struct):
         iipr = increase_printer(ipr)
         pr('static MODULE_T({n}) msg = {{'.format(n=self.get_type()))
         ipr('.msg = {')
-        self.put_message(iipr, 'MSG_MODULE_DSC', 'id',
+        self.put_message(iipr, 'MSG_MODULE_DSC', None,
                          'sizeof({t})'.format(t=self.get_type()) )
         ipr('},')
         ipr('.module = {')
         self.put_module_vals(increase_printer(ipr))
         ipr('},')
         pr('};')
+        self.put_message(pr, module_id='id', prefix='msg.msg.', suffix=';' )
         pr('return {r};'.format(r=self.send('&msg.msg')))
 
     def put_module_vals(self, pr):
@@ -203,7 +207,6 @@ class Module (Struct):
 
     def put_receiver(self, pr):
         self.put_method_receiver_predefenition(pr)
-        self.put_event_processor_predefenition(pr)
         pr('')
         pr(self.get_receiver_prototype())
         pr('{')
@@ -214,7 +217,7 @@ class Module (Struct):
 
     def put_receiver_body(self, pr):
         ipr = increase_printer(pr)
-        pr('message_t *msg = (message_t *)data')
+        pr('message_t *msg = (message_t *)data;')
         pr('')
         pr('switch(msg->msg) {')
         pr('case MSG_EVENT:')
@@ -229,7 +232,8 @@ class Module (Struct):
         return 'static int handle_method(message_t *msg)'
 
     def get_event_processor_prototype(self):
-        return 'int process_event(event_handler_t *handler, event_t *event)'
+        return 'int {n}(event_handler_t *handler, event_t *event)'.format(
+                n=self._event_processor)
 
     def put_method_receiver_predefenition(self, pr):
         return pr(self.get_method_receiver_prototype() + ';')
@@ -258,6 +262,7 @@ class Module (Struct):
                           valen_fmt="MT_NUM_ARGS(method) - {i}")
         pr('default:')
         ipr('return -EINVALIDMETHOD;')
+        pr('}')
 
     def put_event_processor(self, pr):
         pr(self.get_event_processor_prototype())
@@ -267,7 +272,6 @@ class Module (Struct):
 
     def put_event_processor_body(self, pr):
         ipr = increase_printer(pr)
-        pr("message_t msg = &event->msg;")
         pr("uint8_t *eargs = event->args;")
         pr("uint8_t *hargs = handler->args;")
         pr("uint8_t *vav = handler->ev_max_arg >= EV_NUM_ARGS(event) ? NULL :")
@@ -288,3 +292,4 @@ class Module (Struct):
                           valen="vac", va="vav" )
         pr('default:')
         ipr('return EOK;')
+        pr('}')
