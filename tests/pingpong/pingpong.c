@@ -1,6 +1,6 @@
-#include "ping.h"
-#include "pong.h"
-#include "stdio.h"
+#include <ping.h>
+#include <pong.h>
+#include <stdio.h>
 
 #define EVENT_TABLE_SIZE 256
 

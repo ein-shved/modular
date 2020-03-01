@@ -24,11 +24,16 @@ if __name__ == "__main__":
     args = parser.parse_args()
     y = open(args.module, "r").read()
     modules = load(y, Loader)
-    bd = args.builddir + '/'
+    bd = path.abspath(args.builddir)
     if args.out:
-        bd += args.out
+        if path.isabs(args.out):
+            bd = args.out
+        else:
+            bd = path.join(bd, args.out)
     else:
-        bd += path.dirname(args.module)
+        cp = path.commonprefix([args.module, bd])
+        rel = path.relpath(args.module, cp)
+        bd = path.join (bd, path.dirname(rel))
     if 'version' not in modules or str(modules['version']) != VERSION:
         raise InvalidModulesVersionException()
 
@@ -38,14 +43,14 @@ if __name__ == "__main__":
     for n, m in modules['modules'].items():
         makedirs(bd, exist_ok=True)
         module = Module(n, m, args.module)
-        print ("Generating " + module.h_name())
+        print ("Generating " + path.join(bd, module.h_name()))
         h = module.put_h()
-        hf = open(bd + '/' + module.h_name(), "w")
+        hf = open(path.join(bd, module.h_name()), "w")
         hf.write(h)
         hf.close()
 
-        print ("Generating " + module.c_name())
+        print ("Generating " + path.join(bd, module.c_name()))
         c = module.put_c()
-        cf = open(bd + '/' + module.c_name(), "w")
+        cf = open(path.join(bd, module.c_name()), "w")
         cf.write(c)
         cf.close()
