@@ -1,0 +1,50 @@
+version: 0.1
+modules:
+    ping:
+        events:
+            pi1:
+                - ar1
+                - ar2
+                - ar3
+            pi2:
+                - ar1
+                - ar2
+        methods:
+            pi1:
+                arguments:
+                    - ar1
+                    - ar2
+                    - ar3
+                receive: ping_rcv_ts1
+            pi2:
+                arguments:
+                    - ar1
+                    - ar2
+                receive: ping_rcv_ts2
+        sender: ping_send
+        event_processor: ping_process_event
+
+    pong:
+        events:
+            po1:
+                - ar1
+                - ar2
+                - ar3
+            po2:
+                - ar1
+                - ar2
+        methods:
+            ts1:
+                arguments:
+                    - ar1
+                    - ar2
+                    - ar3
+                receive: pong_rcv_ts1
+            ts2:
+                arguments:
+                    - ar1
+                    - ar2
+                receive: pong_rcv_ts2
+        sender: pong_send
+        event_processor: pong_process_event
+
