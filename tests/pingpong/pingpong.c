@@ -15,14 +15,14 @@ static enum {
     PING_STATE,
     PONG_STATE,
     OUTSIDE_STATE,
-} state = OUTSIDE_STATE;
+} g_current_mod = OUTSIDE_STATE;
 
-#define IN_PING(sav) do { sav = state; state = PING_STATE; } while (0)
-#define IN_PONG(sav) do { sav = state; state = PONG_STATE; } while (0)
-#define OUT_FUNC(sav) do { state = sav; } while (0)
+#define IN_PING(sav) do { sav = g_current_mod; g_current_mod = PING_STATE; } while (0)
+#define IN_PONG(sav) do { sav = g_current_mod; g_current_mod = PONG_STATE; } while (0)
+#define OUT_FUNC(sav) do { g_current_mod = sav; } while (0)
 
 #define SWITCH_CALL(fn, rv, ...) do {                                         \
-    switch(state) {                                                           \
+    switch(g_current_mod) {                                                           \
     case PING_STATE:                                                          \
         rv = ping_ ## fn (__VA_ARGS__);                                       \
         break;                                                                \
@@ -33,7 +33,7 @@ static enum {
 } while(0)
 
 #define SWITCH_CALL_VOID(fn, ...) do {                                        \
-    switch(state) {                                                           \
+    switch(g_current_mod) {                                                           \
     case PING_STATE:                                                          \
         ping_ ## fn (__VA_ARGS__);                                            \
         break;                                                                \
@@ -113,7 +113,7 @@ int process_event(event_handler_t *handler, event_t *event)
 void event_table_purge_urgent(void)
 {
     printf ("FATAL PURGING EVENT TABLE FOR %s SIDE\n",
-                state == PING_STATE ? "PING" : "PONG");
+                g_current_mod == PING_STATE ? "PING" : "PONG");
     event_table_update_len(0);
 }
 
@@ -174,7 +174,7 @@ int TEST_RECEIVER(EMPTY, pong, ts2) (uint8_t AR1, uint8_t AR2,
 TEST_ADD(EMPTY);
 
 static void test_empty(void **state) {
-    (void) state; /* unused */
+    (void) g_current_mod; /* unused */
 
     TEST_INIT(EMPTY);
 }
@@ -208,12 +208,12 @@ struct {
     } po2_args;
 } test_chain_state;
 
-#define TEST_CHAIN_CALL(MOD, F, ...) ({                                     \
+#define TEST_CHAIN_CALL(F, ...) ({                                          \
     uint8_t TC__args [] = { __VA_ARGS__ };                                  \
-    test_chain_call(MOD, F, sizeof(TC__args), TC__args);                    \
+    test_chain_call(F, sizeof(TC__args), TC__args);                         \
 })
 
-int test_chain_call(int mod, int f, uint16_t len, uint8_t args[])
+int test_chain_call(int f, uint16_t len, uint8_t args[])
 {
     uint8_t buf[sizeof(method_t) + len];
     method_t *method = (method_t *)buf;
@@ -226,7 +226,7 @@ int test_chain_call(int mod, int f, uint16_t len, uint8_t args[])
 
     memcpy(method->args, args, len);
 
-    switch (mod) {
+    switch (g_current_mod) {
     case PING_STATE:
         return ping_send(&method->msg);
         break;
@@ -245,7 +245,7 @@ int TEST_RECEIVER(CHAIN, ping, ts1) (uint8_t AR1, uint8_t AR2, uint8_t AR3,
     test_chain_state.pi1_args.a2 = AR2;
     test_chain_state.pi1_args.a3 = AR3;
     test_chain_state.pi1_args.valen = vac;
-    return TEST_CHAIN_CALL(PING_STATE, 1, AR1, AR2, AR3);
+    return TEST_CHAIN_CALL(1, AR1, AR2, AR3);
 }
 int TEST_RECEIVER(CHAIN, ping, ts2) (uint8_t AR1, uint8_t AR2,
                                      uint16_t vac, uint8_t vav[])
@@ -254,7 +254,7 @@ int TEST_RECEIVER(CHAIN, ping, ts2) (uint8_t AR1, uint8_t AR2,
     test_chain_state.pi2_args.a1 = AR1;
     test_chain_state.pi2_args.a2 = AR2;
     test_chain_state.pi2_args.valen = vac;
-    return TEST_CHAIN_CALL(PING_STATE, 2, AR1, AR2);
+    return TEST_CHAIN_CALL(2, AR1, AR2);
 }
 int TEST_RECEIVER(CHAIN, pong, ts1)  (uint8_t AR1, uint8_t AR2, uint8_t AR3,
                                       uint16_t vac, uint8_t vav[])
@@ -264,7 +264,7 @@ int TEST_RECEIVER(CHAIN, pong, ts1)  (uint8_t AR1, uint8_t AR2, uint8_t AR3,
     test_chain_state.po1_args.a2 = AR2;
     test_chain_state.po1_args.a3 = AR3;
     test_chain_state.po1_args.valen = vac;
-    return TEST_CHAIN_CALL(PONG_STATE, 2, 3, AR1, AR2, 1);
+    return TEST_CHAIN_CALL(2, AR1, AR2, 1);
 }
 int TEST_RECEIVER(CHAIN, pong, ts2) (uint8_t AR1, uint8_t AR2,
                                      uint16_t vac, uint8_t vav[])
@@ -279,10 +279,13 @@ TEST_ADD(CHAIN);
 static void test_chain(void **state)
 {
     int rc = 0;
+    int sav;
     TEST_INIT(CHAIN);
 
     memset(&test_chain_state, 0, sizeof (test_chain_state));
-    rc = TEST_CHAIN_CALL(PONG_STATE, 1, 1, 2, 3);
+    IN_PONG(sav);
+    rc = TEST_CHAIN_CALL(1, 1, 2, 3);
+    OUT_FUNC(sav);
     assert_int_equal(0, rc);
     assert_int_equal(1, test_chain_state.pi1_called);
     assert_int_equal(1, test_chain_state.pi2_called);
