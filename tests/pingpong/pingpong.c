@@ -179,7 +179,8 @@ static void test_empty(void **state) {
     TEST_INIT(EMPTY);
 }
 
-struct {
+struct call_storage {
+    struct receivers receivers;
     int pi1_called;
     struct {
         uint8_t a1;
@@ -206,14 +207,16 @@ struct {
         uint8_t a2;
         uint16_t valen;
     } po2_args;
-} test_chain_state;
+};
 
-#define TEST_CHAIN_CALL(F, ...) ({                                          \
+struct call_storage *g_pcall_storage = NULL;
+
+#define TEST_CALL(F, ...) ({                                                \
     uint8_t TC__args [] = { __VA_ARGS__ };                                  \
-    test_chain_call(F, sizeof(TC__args), TC__args);                         \
+    test_call(F, sizeof(TC__args), TC__args);                               \
 })
 
-int test_chain_call(int f, uint16_t len, uint8_t args[])
+int test_call(int f, uint16_t len, uint8_t args[])
 {
     uint8_t buf[sizeof(method_t) + len];
     method_t *method = (method_t *)buf;
@@ -237,60 +240,104 @@ int test_chain_call(int f, uint16_t len, uint8_t args[])
     return EINVALID;
 }
 
-int TEST_RECEIVER(CHAIN, ping, ts1) (uint8_t AR1, uint8_t AR2, uint8_t AR3,
+int TEST_RECEIVER(call_storage_tests, ping, ts1) (uint8_t AR1, uint8_t AR2, uint8_t AR3,
                                      uint16_t vac, uint8_t vav[])
 {
-    ++test_chain_state.pi1_called;
-    test_chain_state.pi1_args.a1 = AR1;
-    test_chain_state.pi1_args.a2 = AR2;
-    test_chain_state.pi1_args.a3 = AR3;
-    test_chain_state.pi1_args.valen = vac;
-    return TEST_CHAIN_CALL(1, AR1, AR2, AR3);
+    ++g_pcall_storage->pi1_called;
+    g_pcall_storage->pi1_args.a1 = AR1;
+    g_pcall_storage->pi1_args.a2 = AR2;
+    g_pcall_storage->pi1_args.a3 = AR3;
+    g_pcall_storage->pi1_args.valen = vac;
+    return g_pcall_storage->receivers.ping_rcv_ts1(AR1, AR2, AR3, vac, vav);
 }
-int TEST_RECEIVER(CHAIN, ping, ts2) (uint8_t AR1, uint8_t AR2,
+int TEST_RECEIVER(call_storage_tests, ping, ts2) (uint8_t AR1, uint8_t AR2,
                                      uint16_t vac, uint8_t vav[])
 {
-    ++test_chain_state.pi2_called;
-    test_chain_state.pi2_args.a1 = AR1;
-    test_chain_state.pi2_args.a2 = AR2;
-    test_chain_state.pi2_args.valen = vac;
-    return TEST_CHAIN_CALL(2, AR1, AR2);
+    ++g_pcall_storage->pi2_called;
+    g_pcall_storage->pi2_args.a1 = AR1;
+    g_pcall_storage->pi2_args.a2 = AR2;
+    g_pcall_storage->pi2_args.valen = vac;
+    return g_pcall_storage->receivers.ping_rcv_ts2(AR1, AR2, vac, vav);
 }
-int TEST_RECEIVER(CHAIN, pong, ts1)  (uint8_t AR1, uint8_t AR2, uint8_t AR3,
+int TEST_RECEIVER(call_storage_tests, pong, ts1)  (uint8_t AR1, uint8_t AR2, uint8_t AR3,
                                       uint16_t vac, uint8_t vav[])
 {
-    ++test_chain_state.po1_called;
-    test_chain_state.po1_args.a1 = AR1;
-    test_chain_state.po1_args.a2 = AR2;
-    test_chain_state.po1_args.a3 = AR3;
-    test_chain_state.po1_args.valen = vac;
-    return TEST_CHAIN_CALL(2, AR1, AR2, 1);
+    ++g_pcall_storage->po1_called;
+    g_pcall_storage->po1_args.a1 = AR1;
+    g_pcall_storage->po1_args.a2 = AR2;
+    g_pcall_storage->po1_args.a3 = AR3;
+    g_pcall_storage->po1_args.valen = vac;
+    return g_pcall_storage->receivers.pong_rcv_ts1(AR1, AR2, AR3, vac, vav);
 }
-int TEST_RECEIVER(CHAIN, pong, ts2) (uint8_t AR1, uint8_t AR2,
+int TEST_RECEIVER(call_storage_tests, pong, ts2) (uint8_t AR1, uint8_t AR2,
                                      uint16_t vac, uint8_t vav[])
 {
-    ++test_chain_state.po2_called;
-    test_chain_state.po2_args.a1 = AR1;
-    test_chain_state.po2_args.a2 = AR2;
-    test_chain_state.po2_args.valen = vac;
+    ++g_pcall_storage->po2_called;
+    g_pcall_storage->po2_args.a1 = AR1;
+    g_pcall_storage->po2_args.a2 = AR2;
+    g_pcall_storage->po2_args.valen = vac;
+    return g_pcall_storage->receivers.pong_rcv_ts2(AR1, AR2, vac, vav);
+}
+TEST_ADD(call_storage_tests);
+
+#define CS_TEST_RECEIVER(TEST, MOD, NAME) TEST ## _ ## MOD ## _cs_rcv_ ## NAME
+#define CS_TEST_STORAGE(TEST) TEST ## _storage
+#define CS_TEST_ADD(TEST) static struct call_storage CS_TEST_STORAGE(TEST) = { \
+    .receivers = {                                                             \
+        .ping_rcv_ts1 = CS_TEST_RECEIVER(TEST, ping, ts1),                     \
+        .ping_rcv_ts2 = CS_TEST_RECEIVER(TEST, ping, ts2),                     \
+        .pong_rcv_ts1 = CS_TEST_RECEIVER(TEST, pong, ts1),                     \
+        .pong_rcv_ts2 = CS_TEST_RECEIVER(TEST, pong, ts2),                     \
+    },                                                                         \
+}
+
+#define CS_TEST_INIT(TEST) do {                                                \
+    TEST_INIT(call_storage_tests);                                             \
+    g_pcall_storage = &CS_TEST_STORAGE(TEST);                                  \
+    memset (&g_pcall_storage->pi1_called, 0,                                   \
+            sizeof(*g_pcall_storage) - ((void *)g_pcall_storage -              \
+                    (void *)&g_pcall_storage->pi1_called));                    \
+} while (0)
+
+int CS_TEST_RECEIVER(CHAIN, ping, ts1) (uint8_t AR1, uint8_t AR2, uint8_t AR3,
+                                        uint16_t vac, uint8_t vav[])
+{
+    return TEST_CALL(1, AR1, AR2, AR3);
+}
+int CS_TEST_RECEIVER(CHAIN, ping, ts2) (uint8_t AR1, uint8_t AR2,
+                                        uint16_t vac, uint8_t vav[])
+{
+    return TEST_CALL(2, AR1, AR2);
+}
+
+int CS_TEST_RECEIVER(CHAIN, pong, ts1) (uint8_t AR1, uint8_t AR2, uint8_t AR3,
+                                        uint16_t vac, uint8_t vav[])
+{
+    return TEST_CALL(2, AR1, AR2, 1);
+}
+
+int CS_TEST_RECEIVER(CHAIN, pong, ts2) (uint8_t AR1, uint8_t AR2,
+                                        uint16_t vac, uint8_t vav[])
+{
     return EOK;
 }
-TEST_ADD(CHAIN);
+CS_TEST_ADD(CHAIN);
+
 static void test_chain(void **state)
 {
     int rc = 0;
     int sav;
-    TEST_INIT(CHAIN);
 
-    memset(&test_chain_state, 0, sizeof (test_chain_state));
+    CS_TEST_INIT(CHAIN);
+
     IN_PONG(sav);
-    rc = TEST_CHAIN_CALL(1, 1, 2, 3);
+    rc = TEST_CALL(1, 1, 2, 3);
     OUT_FUNC(sav);
     assert_int_equal(0, rc);
-    assert_int_equal(1, test_chain_state.pi1_called);
-    assert_int_equal(1, test_chain_state.pi2_called);
-    assert_int_equal(1, test_chain_state.po1_called);
-    assert_int_equal(1, test_chain_state.po2_called);
+    assert_int_equal(1, g_pcall_storage->pi1_called);
+    assert_int_equal(1, g_pcall_storage->pi2_called);
+    assert_int_equal(1, g_pcall_storage->po1_called);
+    assert_int_equal(1, g_pcall_storage->po2_called);
 }
 
 int main (void)
