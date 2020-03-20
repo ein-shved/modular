@@ -144,9 +144,9 @@ class Module (Struct):
     def put_message(self, pr, msg=None, module_id=None, data_size=None,
                     prefix=".", suffix=","):
         if isinstance(data_size, str):
-            size = '(' + data_size + ' + 1)'
+            size = '(' + data_size + ' + 5)'
         elif data_size != None:
-            size = data_size + 1
+            size = data_size + 5
         if msg:
             pr ("{p}msg = {t}{s}".format(p=prefix, t=msg, s=suffix))
         if module_id:

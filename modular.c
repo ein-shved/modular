@@ -29,8 +29,8 @@ int append_handler(uint16_t len, uint8_t *buf)
     if (table == NULL)
         return -EUNSUPPORTED;
 
-    if (len < sizeof (dsc) ||
-            len < sizeof(dsc) + dsc->num_args * sizeof(dsc->args[0])) {
+    if (len < sizeof (*dsc) ||
+            len < sizeof(*dsc) + dsc->num_args * sizeof(dsc->args[0])) {
         return -EINVALID;
     }
 
@@ -44,7 +44,7 @@ int append_handler(uint16_t len, uint8_t *buf)
             return -EBUSY;
         }
     }
-    if (handler - table + sizeof(*handler) >= max_table_size) {
+    if ((uint8_t *)handler - (uint8_t *)table + sizeof(*handler) >= max_table_size) {
         return -EOVERFLOW;
     }
     handler->from_module = dsc->from_module;
@@ -61,8 +61,8 @@ int append_handler(uint16_t len, uint8_t *buf)
             handler->ev_max_arg = dsc->args[i][0];
         }
     }
-    if (handler - table + sizeof(*handler) + handler->num_args >=
-            max_table_size) {
+    if ((uint8_t *)handler - (uint8_t *)table + sizeof(*handler) +
+            handler->num_args >= max_table_size) {
         return -EOVERFLOW;
     }
     memset (handler->args, 0, handler->num_args * sizeof(handler->args[0]));

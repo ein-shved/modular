@@ -362,6 +362,12 @@ int CS_TEST_RECEIVER(PARAMS, pong, ts2) (uint8_t AR1, uint8_t AR2,
 }
 CS_TEST_ADD(PARAMS);
 
+static void test_params(void **state)
+{
+    int sav;
+
+    CS_TEST_INIT(PARAMS);
+
 #define STORAGE_VAL(FUNC, VAL) (g_current_mod == PING_STATE ?                 \
     g_pcall_storage->po ## FUNC ## _ ## VAL :                                 \
     g_pcall_storage->pi ## FUNC ## _ ## VAL)
@@ -382,6 +388,7 @@ CS_TEST_ADD(PARAMS);
     int __num_called = STORAGE_VAL(FUNC, called);                             \
     assert_int_not_equal(g_current_mod, OUTSIDE_STATE);                       \
     assert_return_code(TEST_CALL(FUNC, ## __VA_ARGS__), 0);                   \
+    assert_int_equal(STORAGE_VAL(FUNC, called), __num_called + 1);            \
     assert_int_equal(__va_len > 0 ? __va[0] : 0, STORAGE_VAL(FUNC, args.a1)); \
     assert_int_equal(__va_len > 1 ? __va[1] : 0, STORAGE_VAL(FUNC, args.a2)); \
     assert_int_equal(__va_len > 2 ? __va[2] : 0, STORAGE_VAL(FUNC, args.a3)); \
@@ -389,13 +396,6 @@ CS_TEST_ADD(PARAMS);
             STORAGE_VAL(FUNC, args.valen));                                   \
 } while (0)
 
-
-
-static void test_params(void **state)
-{
-    int sav;
-
-    CS_TEST_INIT(PARAMS);
 
     IN_PONG(sav);
     TEST_CALL_CHECK_3(1);
@@ -425,6 +425,111 @@ static void test_params(void **state)
     TEST_CALL_CHECK_2(2, 0, 1, 2, 3);
     OUT_FUNC(sav);
 
+#undef TEST_CALL_CHECK_3
+#undef TEST_CALL_CHECK_2
+#undef STORAGE_VAL
+}
+
+int CS_TEST_RECEIVER(SUBSCRIPTION, ping, ts1) (uint8_t AR1, uint8_t AR2,
+                                               uint8_t AR3,
+                                               uint16_t vac, uint8_t vav[])
+{
+    int rc = remove_handlers(AR1, AR2, AR3);
+    return rc < 0 ? rc : EOK;
+}
+int CS_TEST_RECEIVER(SUBSCRIPTION, ping, ts2) (uint8_t AR1, uint8_t AR2,
+                                               uint16_t vac, uint8_t vav[])
+{
+    int rc = append_handler(vac, vav);
+    return rc;
+}
+
+int CS_TEST_RECEIVER(SUBSCRIPTION, pong, ts1) (uint8_t AR1, uint8_t AR2,
+                                               uint8_t AR3,
+                                               uint16_t vac, uint8_t vav[])
+{
+    int rc = remove_handlers(AR1, AR2, AR3);
+    return rc < 0 ? rc : EOK;
+}
+
+int CS_TEST_RECEIVER(SUBSCRIPTION, pong, ts2) (uint8_t AR1, uint8_t AR2,
+                                               uint16_t vac, uint8_t vav[])
+{
+    return append_handler(vac, vav);
+}
+
+CS_TEST_ADD(SUBSCRIPTION);
+
+static void test_subscription(void **state)
+{
+    int sav;
+#define MAX_SUBSCRIPTION_ARGS 16
+    uint8_t buf [ sizeof (event_handler_dsc_t) + MAX_SUBSCRIPTION_ARGS ];
+    event_handler_dsc_t *handler = (event_handler_dsc_t *) (buf + 2);
+
+    CS_TEST_INIT(SUBSCRIPTION);
+
+    IN_PONG(sav);
+
+#define ADD_ARG(ev, mt) do {                                                   \
+    assert_in_range(handler->num_args, 0, MAX_SUBSCRIPTION_ARGS);              \
+    handler->args[handler->num_args][0] = ev;                                  \
+    handler->args[handler->num_args][1] = mt;                                  \
+    ++handler->num_args;                                                       \
+} while (0)
+
+#define SUBSCRIBE_SEND(f) test_call(f,                                         \
+        2 + sizeof(*handler) + (handler->num_args*2), buf)
+
+    memset(buf, 0, sizeof (buf));
+    handler->rcv_event = 1;
+    handler->called_method = 1;
+    ADD_ARG(2, 3);
+    ADD_ARG(3, 2);
+    ADD_ARG(1, 1);
+    assert_return_code(SUBSCRIBE_SEND(2), 0);
+    assert_int_equal(1, g_pcall_storage->pi2_called);
+    assert_return_code(event_po1_send (0, 100, 3, 2), 0); /* Handled, do nothing */
+    assert_int_equal(1, g_pcall_storage->pi1_called);
+    assert_return_code(event_po1_send (0, 0, 1, 1), 0); /* Handled, delete */
+    assert_int_equal(2, g_pcall_storage->pi1_called);
+    assert_return_code(event_po1_send (0, 0, 1, 1), 0); /* Not handled */
+    assert_int_equal(2, g_pcall_storage->pi1_called);
+
+    assert_return_code(SUBSCRIBE_SEND(2), 0);
+    assert_int_equal(2, g_pcall_storage->pi2_called);
+
+    handler->rcv_event = 2;
+    handler->num_args = 0;
+    ADD_ARG(1, 2);
+    ADD_ARG(2, 3);
+
+    assert_return_code(SUBSCRIBE_SEND(2), 0);
+    assert_int_equal(3, g_pcall_storage->pi2_called);
+
+    assert_return_code(event_po1_send (0, 100, 3, 2), 0); /* Handled, do nothing */
+    assert_int_equal(3, g_pcall_storage->pi1_called);
+
+    assert_return_code(event_po2_send (0, 10, 10), 0); /* Handled, do nothing */
+    assert_int_equal(4, g_pcall_storage->pi1_called);
+
+    assert_return_code(event_po2_send (0, 1, 1), 0); /* Handled, removes 1st event */
+    assert_int_equal(5, g_pcall_storage->pi1_called);
+
+    assert_return_code(event_po1_send (0, 0, 1, 1), 0); /* Not handled */
+    assert_int_equal(5, g_pcall_storage->pi1_called);
+
+    assert_return_code(event_po2_send (0, 2, 0), 0); /* Handled, removes 2nd event */
+    assert_int_equal(6, g_pcall_storage->pi1_called);
+
+    assert_return_code(event_po2_send (0, 1, 1), 0); /* Not handled */
+    assert_int_equal(6, g_pcall_storage->pi1_called);
+
+    OUT_FUNC(sav);
+
+#undef SUBSCRIBE_SEND
+#undef ADD_ARG
+#undef MAX_SUBSCRIPTION_ARGS
 }
 
 int main (void)
@@ -433,6 +538,7 @@ int main (void)
         cmocka_unit_test(test_empty),
         cmocka_unit_test(test_chain),
         cmocka_unit_test(test_params),
+        cmocka_unit_test(test_subscription),
     };
     return cmocka_run_group_tests(tests, NULL, NULL);
 }
