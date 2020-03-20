@@ -22,7 +22,7 @@ static enum {
 #define OUT_FUNC(sav) do { g_current_mod = sav; } while (0)
 
 #define SWITCH_CALL(fn, rv, ...) do {                                         \
-    switch(g_current_mod) {                                                           \
+    switch(g_current_mod) {                                                   \
     case PING_STATE:                                                          \
         rv = ping_ ## fn (__VA_ARGS__);                                       \
         break;                                                                \
@@ -33,7 +33,7 @@ static enum {
 } while(0)
 
 #define SWITCH_CALL_VOID(fn, ...) do {                                        \
-    switch(g_current_mod) {                                                           \
+    switch(g_current_mod) {                                                   \
     case PING_STATE:                                                          \
         ping_ ## fn (__VA_ARGS__);                                            \
         break;                                                                \
@@ -295,8 +295,8 @@ TEST_ADD(call_storage_tests);
     TEST_INIT(call_storage_tests);                                             \
     g_pcall_storage = &CS_TEST_STORAGE(TEST);                                  \
     memset (&g_pcall_storage->pi1_called, 0,                                   \
-            sizeof(*g_pcall_storage) - ((void *)g_pcall_storage -              \
-                    (void *)&g_pcall_storage->pi1_called));                    \
+            sizeof(*g_pcall_storage) - ((void *)&g_pcall_storage->pi1_called - \
+                                        (void *)g_pcall_storage));             \
 } while (0)
 
 int CS_TEST_RECEIVER(CHAIN, ping, ts1) (uint8_t AR1, uint8_t AR2, uint8_t AR3,
@@ -325,19 +325,106 @@ CS_TEST_ADD(CHAIN);
 
 static void test_chain(void **state)
 {
-    int rc = 0;
     int sav;
 
     CS_TEST_INIT(CHAIN);
 
     IN_PONG(sav);
-    rc = TEST_CALL(1, 1, 2, 3);
+    assert_return_code(TEST_CALL(1, 1, 2, 3), 0);
     OUT_FUNC(sav);
-    assert_int_equal(0, rc);
     assert_int_equal(1, g_pcall_storage->pi1_called);
     assert_int_equal(1, g_pcall_storage->pi2_called);
     assert_int_equal(1, g_pcall_storage->po1_called);
     assert_int_equal(1, g_pcall_storage->po2_called);
+}
+
+int CS_TEST_RECEIVER(PARAMS, ping, ts1) (uint8_t AR1, uint8_t AR2, uint8_t AR3,
+                                        uint16_t vac, uint8_t vav[])
+{
+    return EOK;
+}
+int CS_TEST_RECEIVER(PARAMS, ping, ts2) (uint8_t AR1, uint8_t AR2,
+                                        uint16_t vac, uint8_t vav[])
+{
+    return EOK;
+}
+
+int CS_TEST_RECEIVER(PARAMS, pong, ts1) (uint8_t AR1, uint8_t AR2, uint8_t AR3,
+                                        uint16_t vac, uint8_t vav[])
+{
+    return EOK;
+}
+
+int CS_TEST_RECEIVER(PARAMS, pong, ts2) (uint8_t AR1, uint8_t AR2,
+                                        uint16_t vac, uint8_t vav[])
+{
+    return EOK;
+}
+CS_TEST_ADD(PARAMS);
+
+#define STORAGE_VAL(FUNC, VAL) (g_current_mod == PING_STATE ?                 \
+    g_pcall_storage->po ## FUNC ## _ ## VAL :                                 \
+    g_pcall_storage->pi ## FUNC ## _ ## VAL)
+#define TEST_CALL_CHECK_2(FUNC, ...) do {                                     \
+    uint8_t __va[] = { __VA_ARGS__ };                                         \
+    uint16_t __va_len = sizeof(__va);                                         \
+    int __num_called = STORAGE_VAL(FUNC, called);                             \
+    assert_int_not_equal(g_current_mod, OUTSIDE_STATE);                       \
+    assert_return_code(TEST_CALL(FUNC, ## __VA_ARGS__), 0);                   \
+    assert_int_equal(__va_len > 0 ? __va[0] : 0, STORAGE_VAL(FUNC, args.a1)); \
+    assert_int_equal(__va_len > 1 ? __va[1] : 0, STORAGE_VAL(FUNC, args.a2)); \
+    assert_int_equal(__va_len > 2 ? __va_len - 2 : 0,                         \
+            STORAGE_VAL(FUNC, args.valen));                                   \
+} while (0)
+#define TEST_CALL_CHECK_3(FUNC, ...) do {                                     \
+    uint8_t __va[] = { __VA_ARGS__ };                                         \
+    uint16_t __va_len = sizeof(__va);                                         \
+    int __num_called = STORAGE_VAL(FUNC, called);                             \
+    assert_int_not_equal(g_current_mod, OUTSIDE_STATE);                       \
+    assert_return_code(TEST_CALL(FUNC, ## __VA_ARGS__), 0);                   \
+    assert_int_equal(__va_len > 0 ? __va[0] : 0, STORAGE_VAL(FUNC, args.a1)); \
+    assert_int_equal(__va_len > 1 ? __va[1] : 0, STORAGE_VAL(FUNC, args.a2)); \
+    assert_int_equal(__va_len > 2 ? __va[2] : 0, STORAGE_VAL(FUNC, args.a3)); \
+    assert_int_equal(__va_len > 3 ? __va_len - 3 : 0,                         \
+            STORAGE_VAL(FUNC, args.valen));                                   \
+} while (0)
+
+
+
+static void test_params(void **state)
+{
+    int sav;
+
+    CS_TEST_INIT(PARAMS);
+
+    IN_PONG(sav);
+    TEST_CALL_CHECK_3(1);
+    TEST_CALL_CHECK_3(1, 0);
+    TEST_CALL_CHECK_3(1, 0, 1);
+    TEST_CALL_CHECK_3(1, 0, 1, 2);
+    TEST_CALL_CHECK_3(1, 0, 1, 2, 3);
+
+    TEST_CALL_CHECK_2(2);
+    TEST_CALL_CHECK_2(2, 0);
+    TEST_CALL_CHECK_2(2, 0, 1);
+    TEST_CALL_CHECK_2(2, 0, 1, 2);
+    TEST_CALL_CHECK_2(2, 0, 1, 2, 3);
+    OUT_FUNC(sav);
+
+    IN_PING(sav);
+    TEST_CALL_CHECK_3(1);
+    TEST_CALL_CHECK_3(1, 0);
+    TEST_CALL_CHECK_3(1, 0, 1);
+    TEST_CALL_CHECK_3(1, 0, 1, 2);
+    TEST_CALL_CHECK_3(1, 0, 1, 2, 3);
+
+    TEST_CALL_CHECK_2(2);
+    TEST_CALL_CHECK_2(2, 0);
+    TEST_CALL_CHECK_2(2, 0, 1);
+    TEST_CALL_CHECK_2(2, 0, 1, 2);
+    TEST_CALL_CHECK_2(2, 0, 1, 2, 3);
+    OUT_FUNC(sav);
+
 }
 
 int main (void)
@@ -345,6 +432,7 @@ int main (void)
     const struct CMUnitTest tests[] = {
         cmocka_unit_test(test_empty),
         cmocka_unit_test(test_chain),
+        cmocka_unit_test(test_params),
     };
     return cmocka_run_group_tests(tests, NULL, NULL);
 }
