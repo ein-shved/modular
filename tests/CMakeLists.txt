@@ -1,1 +1,3 @@
-add_subdirectory(pingpong)
+if (NOT AVR)
+    add_subdirectory(pingpong)
+endif()

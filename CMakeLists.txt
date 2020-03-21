@@ -6,7 +6,12 @@ set(CMAKE_BUILD_TYPE Debug)
 
 include_directories(${PROJECT_SOURCE_DIR})
 
-add_library(modular STATIC modular.c)
+if (AVR)
+    add_avr_library(modular modular.c)
+else()
+    add_library(modular STATIC modular.c)
+endif()
+
 
 function(generate_modules TARGETNAME)
     set(options)
