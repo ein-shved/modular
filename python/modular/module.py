@@ -201,7 +201,8 @@ class Module (Struct):
         pr(".num_events = {n},".format(n=len(self._events)))
 
     def get_receiver_prototype(self):
-        return 'int {n}_process_message(uint8_t *data)'.format(n=self._name)
+        return 'int {n}_process_message(uint8_t *data, uint16_t len)'.format(
+                                                                   n=self._name)
 
     def put_receiver_predefenition(self, pr):
         pr(self.get_receiver_prototype() + ';')
@@ -220,6 +221,8 @@ class Module (Struct):
         ipr = increase_printer(pr)
         pr('message_t *msg = (message_t *)data;')
         pr('')
+        pr('if (len < sizeof (*msg) || len < msg->size)')
+        ipr('return -EINVALID;')
         pr('switch(msg->msg) {')
         pr('case MSG_EVENT:')
         ipr('return handle_event(msg);')

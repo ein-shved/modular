@@ -47,7 +47,7 @@ int ping_send (message_t *msg)
 {
     int sav, res;
     IN_PONG(sav);
-    res = pong_process_message((uint8_t *)msg);
+    res = pong_process_message((uint8_t *)msg, msg->size);
     OUT_FUNC(sav);
     return res;
 }
@@ -56,7 +56,7 @@ int pong_send (message_t *msg)
 {
     int sav, res;
     IN_PING(sav);
-    res = ping_process_message((uint8_t *)msg);
+    res = ping_process_message((uint8_t *)msg, msg->size);
     OUT_FUNC(sav);
     return res;
 }
