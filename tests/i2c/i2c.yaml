@@ -1,0 +1,13 @@
+version: 0.1
+modules:
+
+    button:
+        events:
+            btn:
+                - nst
+                - ost
+
+    light:
+        methods:
+            lit:
+                - stt
