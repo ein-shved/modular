@@ -12,6 +12,7 @@ class Module (Struct):
         self._sender = name + '_send_data'
         self._event_table_get = name + '_event_table_get'
         self._filename = filename
+        self._event_processor = name + '_process_event'
         events_inline = False
 
         if 'events_inline' in obj:

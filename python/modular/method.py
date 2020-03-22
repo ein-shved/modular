@@ -12,7 +12,7 @@ class Method(Struct):
         self._receive = "method_" + self.name() + "_receive";
         if isinstance(obj, list):
             for arg in obj:
-                self._arguments.append(arg.upper())
+                self._arguments.append(Argument(arg.upper()))
         if isinstance(obj, dict):
             if 'arguments' in obj:
                 for arg in obj['arguments']:
