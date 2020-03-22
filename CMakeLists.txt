@@ -1,7 +1,6 @@
 cmake_minimum_required(VERSION 3.0)
 project (modular)
 
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_BUILD_TYPE Debug)
 
 include_directories(${PROJECT_SOURCE_DIR})
@@ -24,7 +23,7 @@ function(generate_modules TARGETNAME)
     endif()
     execute_process(COMMAND ./gen_module.sh -l -f=cmake -a
                             ${MODULE_YAML_FILE}
-                            --builddir ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}
+                            --builddir ${CMAKE_BINARY_DIR}
                     WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
                     OUTPUT_VARIABLE MODULE_FILES)
     set (TARGETNAME_MODULES)
@@ -46,25 +45,28 @@ function(generate_modules TARGETNAME)
             set (MOD_HEADER ${F})
             list(APPEND TARGETNAME_HEADERS ${MOD_HEADER})
             list(APPEND TARGETNAME_SOURCES ${MOD_SOURCE})
-            set (${MOD}_SOURCE ${MOD_SOURCE} PARENT_SCOPE)
-            set (${MOD}_HEADER ${MOD_HEADER} PARENT_SCOPE)
+            set (${MOD}_SOURCES ${MOD_SOURCE} PARENT_SCOPE)
+            set (${MOD}_HEADERS ${MOD_HEADER} PARENT_SCOPE)
         endif ()
     endforeach()
     add_custom_target(${TARGETNAME}_GEN
         COMMAND ./gen_module.sh
               ${CMAKE_CURRENT_SOURCE_DIR}/${TARGETNAME}.yaml
-              --builddir ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}
+              --builddir ${CMAKE_BINARY_DIR}
         WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
         SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/${TARGETNAME}.yaml
         BYPRODUCTS ${TARGETNAME_SOURCES})
+    if (NOT TARGET ${TARGETNAME})
+        add_custom_target(${TARGETNAME})
+    else()
+        target_include_directories(${TARGETNAME} PRIVATE ${TARGETNAME_INCLUDE_DIRS})
+    endif()
     add_dependencies(${TARGETNAME} ${TARGETNAME}_GEN modular)
-    target_include_directories(${TARGETNAME} PRIVATE ${TARGETNAME_INCLUDE_DIRS})
-    target_sources(${TARGETNAME} PRIVATE ${TARGETNAME_SOURCES})
 
-    set (${TARGETNAME}_MODULES ${TARGETNAME_MODULES} PARENT_SCOPE)
-    set (${TARGETNAME}_HEADERS ${TARGETNAME_HEADERS} PARENT_SCOPE)
-    set (${TARGETNAME}_SOURCES ${TARGETNAME_SOURCES} PARENT_SCOPE)
-    set (${TARGETNAME}_INCLUDE_DIRS ${TARGETNAME_INCLUDE_DIRS} PARENT_SCOPE)
+    set (${TARGETNAME}_MODULAR_MODULES ${TARGETNAME_MODULES} PARENT_SCOPE)
+    set (${TARGETNAME}_MODULAR_HEADERS ${TARGETNAME_HEADERS} PARENT_SCOPE)
+    set (${TARGETNAME}_MODULAR_SOURCES ${TARGETNAME_SOURCES} PARENT_SCOPE)
+    set (${TARGETNAME}_MODULAR_INCLUDE_DIRS ${TARGETNAME_INCLUDE_DIRS} PARENT_SCOPE)
 endfunction(generate_modules)
 
 add_subdirectory(tests)
