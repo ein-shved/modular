@@ -139,6 +139,18 @@ int append_handler(uint16_t len, uint8_t *buf);
 /* Zero rcv_event and called_method to match all */
 int remove_handlers(module_id_t from_module, uint8_t rcv_event,
                     uint8_t called_method);
+int append_handler_parced(module_id_t from_module,
+                          uint8_t rcv_event, uint8_t called_method,
+                          uint8_t num_args, uint8_t args[][2]);
+#define create_handler(from_module, rcv_event, called_method, ...)             \
+({                                                                             \
+    uint8_t __args[][2] = { __VA_ARGS__ };                                     \
+    uint8_t __num_args = sizeof(__args) / sizeof(__args[0]);                   \
+    append_handler_parced(from_module, rcv_event, called_method,               \
+                          __num_args, __args);                                 \
+})
+#define handler_arg_pair(ev, mt) {(ev), (mt)}
+
 
 #define for_table(i, table_len, ptr, ...)                                      \
     for (__VA_ARGS__; (i)<(table_len);                                         \

@@ -21,44 +21,52 @@ int handle_event(message_t *msg)
 
 int append_handler(uint16_t len, uint8_t *buf)
 {
-    uint16_t table_len, max_table_size, i;
     event_handler_dsc_t *dsc = (event_handler_dsc_t *)buf;
+
+    if (len < sizeof (*dsc) ||
+            len < sizeof(*dsc) + dsc->num_args * sizeof(dsc->args[0])) {
+        return -EINVALID;
+    }
+    return append_handler_parced(dsc->from_module, dsc->rcv_event,
+                                 dsc->called_method, dsc->num_args,
+                                 dsc->args);
+}
+int append_handler_parced(module_id_t from_module,
+                          uint8_t rcv_event, uint8_t called_method,
+                          uint8_t num_args, uint8_t args[][2])
+{
+    uint16_t table_len, max_table_size, i;
     event_handler_t *table = event_table_getter(&table_len, &max_table_size);
     event_handler_t *handler;
 
     if (table == NULL)
         return -EUNSUPPORTED;
 
-    if (len < sizeof (*dsc) ||
-            len < sizeof(*dsc) + dsc->num_args * sizeof(dsc->args[0])) {
-        return -EINVALID;
-    }
-
     for_each_table(i, table_len, handler, table) {
         if (handler - table >= max_table_size) {
             event_table_purge_urgent();
             return -EFATAL;
         }
-        if (handler->from_module == dsc->from_module &&
-                handler->rcv_event == dsc->rcv_event) {
+        if (handler->from_module == from_module &&
+                handler->rcv_event == rcv_event) {
             return -EBUSY;
         }
     }
     if ((uint8_t *)handler - (uint8_t *)table + sizeof(*handler) >= max_table_size) {
         return -EOVERFLOW;
     }
-    handler->from_module = dsc->from_module;
-    handler->rcv_event = dsc->rcv_event;
-    handler->called_method = dsc->called_method;
-    handler->num_args = dsc->args[0][1];
-    handler->ev_max_arg = dsc->args[0][0];
+    handler->from_module = from_module;
+    handler->rcv_event = rcv_event;
+    handler->called_method = called_method;
+    handler->num_args = args[0][1];
+    handler->ev_max_arg = args[0][0];
 
-    for (i = 0; i < dsc->num_args; ++i) {
-        if (handler->num_args < dsc->args[i][1]) {
-            handler->num_args = dsc->args[i][1];
+    for (i = 0; i < num_args; ++i) {
+        if (handler->num_args < args[i][1]) {
+            handler->num_args = args[i][1];
         }
-        if (handler->ev_max_arg < dsc->args[i][0]) {
-            handler->ev_max_arg = dsc->args[i][0];
+        if (handler->ev_max_arg < args[i][0]) {
+            handler->ev_max_arg = args[i][0];
         }
     }
     if ((uint8_t *)handler - (uint8_t *)table + sizeof(*handler) +
@@ -66,9 +74,9 @@ int append_handler(uint16_t len, uint8_t *buf)
         return -EOVERFLOW;
     }
     memset (handler->args, 0, handler->num_args * sizeof(handler->args[0]));
-    for (i = 0; i < dsc->num_args; ++i) {
-        if (dsc->args[i][1] > 0) {
-            handler->args[dsc->args[i][1] - 1] = dsc->args[i][0];
+    for (i = 0; i < num_args; ++i) {
+        if (args[i][1] > 0) {
+            handler->args[args[i][1] - 1] = args[i][0];
         }
     }
     event_table_update_len(table_len + 1);
@@ -99,7 +107,7 @@ int remove_handlers(module_id_t from_module, uint8_t rcv_event,
            )
         {
             ++removed;
-            /* Remove this handler = do not shift dst*/
+            /* Remove this handler = do not shift dst */
         } else {
             memcpy(dst, handler, sizeof(handler) + num_args);
             dst = (event_handler_t *)((uint8_t *)(dst + 1) + num_args);

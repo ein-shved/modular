@@ -109,6 +109,10 @@ int method_lit_receive(uint8_t state, uint16_t vac, uint8_t vav[])
         PORTB &= ~ _BV(1);
     }
 }
+void init_events()
+{
+    create_handler(SLAVE_ADDRESS, 1, 1, handler_arg_pair(1, 1));
+}
 int main(void)
 {
     // TWI setup
