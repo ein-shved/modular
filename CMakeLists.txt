@@ -3,6 +3,11 @@ project (modular)
 
 set(CMAKE_BUILD_TYPE Debug)
 
+if (DEFINED ENV{PREFIX})
+    include_directories($ENV{PREFIX}/include)
+    link_directories($ENV{PREFIX}/lib)
+endif()
+
 include_directories(${PROJECT_SOURCE_DIR})
 
 if (AVR)
