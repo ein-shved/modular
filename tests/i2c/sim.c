@@ -45,17 +45,31 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include <libgen.h>
 #include <limits.h>
 #include <pthread.h>
 
 #include <simavr/sim_avr.h>
-#include <simavr/avr_twi.h>
 #include <simavr/sim_elf.h>
 #include <simavr/sim_gdb.h>
 #include <simavr/sim_vcd_file.h>
 
+#include <simavr/avr_twi.h>
+#include <simavr/avr_ioport.h>
 
+typedef struct {
+    avr_t *master;
+    avr_t *slave;
+    enum {
+        GDB_MASTER = 1 << 0,
+        GDB_SLAVE = 1 << 1,
+    } gdbs;
+    struct {
+        avr_irq_t *irq;
+        int state;
+    } button;
+} board_t;
 
 avr_t *prepare_device(const char *fname, const char *mmcu, unsigned long freq)
 {
@@ -86,12 +100,88 @@ avr_t *prepare_device(const char *fname, const char *mmcu, unsigned long freq)
         return NULL;
     }
     avr_load_firmware(avr, &f);
+    avr->log = LOG_WARNING;
     return avr;
 }
 
+void lamp(struct avr_irq_t *irq, uint32_t value, void *param)
+{
+    printf("Lamp is switched %s\n", value ? "ON" : "OFF");
+}
+
+int prepare_peripherals(board_t *board)
+{
+    /* Create and attach button to slave */
+    const char *names[] = { "button" };
+    board->button.irq = avr_alloc_irq(&board->slave->irq_pool, 0, 1, names);
+    avr_connect_irq(board->button.irq,
+            avr_io_getirq(board->slave, AVR_IOCTL_IOPORT_GETIRQ('B'), 0));
+    board->button.state = 0;
+
+    /* Attach transmit request wire from slave to master */
+    avr_connect_irq(
+        avr_io_getirq(board->slave, AVR_IOCTL_IOPORT_GETIRQ('B'), 1),
+        avr_io_getirq(board->master, AVR_IOCTL_IOPORT_GETIRQ('B'), 0));
+
+    /* Connect diod to PORTB[0] of master */
+    avr_irq_register_notify(
+        avr_io_getirq(board->master, AVR_IOCTL_IOPORT_GETIRQ('B'), 1),
+        lamp, board);
+
+    /* Connect i2c lines */
+    avr_connect_irq(
+        avr_io_getirq(board->master, AVR_IOCTL_TWI_GETIRQ(0), TWI_IRQ_OUTPUT),
+        avr_io_getirq(board->slave, AVR_IOCTL_TWI_GETIRQ(0), TWI_IRQ_INPUT));
+    avr_connect_irq(
+        avr_io_getirq(board->slave, AVR_IOCTL_TWI_GETIRQ(0), TWI_IRQ_OUTPUT),
+        avr_io_getirq(board->master, AVR_IOCTL_TWI_GETIRQ(0), TWI_IRQ_INPUT));
+}
+void set_button(board_t *board, int state)
+{
+    board->button.state = state;
+    printf("Setting button state to %d\n", state);
+    avr_raise_irq(board->button.irq, state);
+}
+
+static avr_t *master, *slave;
+static void
+avr_logger(avr_t * avr, const int level, const char * format, va_list ap)
+{
+#define LOG_TYPE_STR(n) [LOG_ ## n] = #n
+    static const char *lvl_str[] = {
+        LOG_TYPE_STR(NONE),
+        LOG_TYPE_STR(OUTPUT),
+        LOG_TYPE_STR(ERROR),
+        LOG_TYPE_STR(WARNING),
+        LOG_TYPE_STR(TRACE),
+        LOG_TYPE_STR(DEBUG),
+    };
+#undef LOG_TYPE_STR
+#define FMT_PREFIX "  %s %s: %s"
+    if (level == LOG_OUTPUT) {
+        vprintf(format, ap);
+        return;
+    }
+    if (level >= LOG_WARNING) {
+        return;
+    }
+    char _fmt[strlen(format) + sizeof(FMT_PREFIX) + sizeof("WARNING") +
+              strlen("MASTER")];
+    const char *name = "AVR";
+    if (avr == master) {
+        name = "[MASTER]";
+    }
+    if (avr == slave) {
+        name = "[SLAVE] ";
+    }
+    sprintf(_fmt, FMT_PREFIX, name, lvl_str[level], format);
+    vprintf(_fmt, ap);
+#undef FMT_PREFIX
+}
 int main(int argc, char *argv[])
 {
-    avr_t *master, *slave, *cur_avr;
+    board_t board;
+    avr_t *cur_avr;
     const char *mmcu = "atmega8";
     unsigned long frequency = 1000000UL;
     unsigned long master_gdb=0, slave_gdb=0;
@@ -129,23 +219,39 @@ int main(int argc, char *argv[])
     if (master == NULL || slave == NULL) {
         return 1;
     }
+    board.master = master;
+    board.slave = slave;
+    prepare_peripherals(&board);
+
+    avr_global_logger_set(avr_logger);
 
     if (master_gdb > 0) {
         master->gdb_port = master_gdb;
         avr_gdb_init(master);
+        /* Stop cpu to wait for gdb */
+        master->state = cpu_Stopped;
     }
 
     if (slave_gdb > 0) {
         slave->gdb_port = slave_gdb;
         avr_gdb_init(slave);
+        /* Stop cpu to wait for gdb */
+        slave->state = cpu_Stopped;
     }
 
     printf( "\nDemo launching:\n");
 
     cur_avr = master;
     state = cpu_Running;
+    uint64_t counter = 0;
     while ((state != cpu_Done) && (state != cpu_Crashed)) {
         state = avr_run(cur_avr);
+        if (cur_avr->state != cpu_Stopped) {
+            counter = (counter + 1) % 0x1000000;
+            if (!counter) {
+                set_button(&board, !board.button.state);
+            }
+        }
         cur_avr = cur_avr == master ? slave : master;
     }
 }
