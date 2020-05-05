@@ -1,0 +1,5 @@
+if (AVR)
+    add_avr_library(ringbuf ringbuf.c)
+else()
+    add_library(ringbuf STATIC ringbuf.c)
+endif()

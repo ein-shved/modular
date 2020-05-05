@@ -74,4 +74,5 @@ function(generate_modules TARGETNAME)
     set (${TARGETNAME}_MODULAR_INCLUDE_DIRS ${TARGETNAME_INCLUDE_DIRS} PARENT_SCOPE)
 endfunction(generate_modules)
 
+add_subdirectory(util)
 add_subdirectory(tests)
