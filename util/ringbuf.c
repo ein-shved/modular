@@ -64,7 +64,7 @@ int ringbuf_commit(ringbuf_t *r)
     }
     return 0;
 }
-int ringbuf_abort(ringbuf_t *r)
+void ringbuf_abort(ringbuf_t *r)
 {
     r->write_head = r->read_head + r->read_len;
     r->write_len = 0;
@@ -86,4 +86,5 @@ int ringbuf_shift(ringbuf_t *r, size_t len)
             r->read_head = r->write_head;
         }
     }
+    return 0;
 }
